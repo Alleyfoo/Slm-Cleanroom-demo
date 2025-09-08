@@ -8,7 +8,7 @@ from app.pipeline import run_pipeline
 def test_embedded_en_flag():
     text = "Tämä takki on todella hyvä ja super warm for winter commutes kaupungilla."
     result = run_pipeline(text)
-    assert 'embedded_en' in result['flags']
+    assert any((f == 'embedded_en') or (isinstance(f, dict) and f.get('type') == 'embedded_en') for f in result['flags'])
 
 
 def test_term_unchanged():
