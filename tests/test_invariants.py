@@ -10,7 +10,7 @@ def test_numeric_patterns_unchanged():
     text = "Values: -10%, range 12\u201315, decimal 3,5, big 1.000,50."
     result = run_pipeline(text)
     assert result["clean_text"] == text
-    assert "numeric_change" not in result["flags"]
+    assert not any(f.get("type") == "numeric_change" for f in result["flags"])
 
 
 def test_term_survives():
@@ -20,15 +20,16 @@ def test_term_survives():
 
 
 def test_numeric_change_flag(monkeypatch):
-    def fake_cleanup(masked_text: str, translate_embedded: bool):
+    def fake_cleanup(masked_text: str, translate_embedded: bool, **kwargs):
         return {"clean_text": masked_text.replace("-10%", "-11%"), "flags": [], "changes": []}
     monkeypatch.setattr("app.pipeline.slm_cleanup", fake_cleanup)
     result = run_pipeline("Discount -10% now")
-    assert "numeric_change" in result["flags"]
+    assert result["clean_text"] == "Discount -10% now"
+    assert any(f.get("type") == "numeric_change" for f in result["flags"])
 
 
 def test_term_change_raises(monkeypatch):
-    def fake_cleanup(masked_text: str, translate_embedded: bool):
+    def fake_cleanup(masked_text: str, translate_embedded: bool, **kwargs):
         return {"clean_text": masked_text.replace("ABC-123 v2", "XYZ-999"), "flags": [], "changes": []}
     monkeypatch.setattr("app.pipeline.slm_cleanup", fake_cleanup)
     with pytest.raises(ValueError):
