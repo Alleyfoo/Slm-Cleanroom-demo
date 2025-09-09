@@ -45,5 +45,5 @@ No code changes required; the pipeline auto-enables Voikko if available.
 
 ```bash
 python cli/clean_table.py data/mock_inputs.csv -o data/mock_outputs.csv \
-  --model-path "$PWD/models/$HF_FILENAME"
+  --model-path "$PWD/models/$HF_FILENAME" --workers 4
 ```
