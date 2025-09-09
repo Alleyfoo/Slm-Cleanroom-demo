@@ -1,6 +1,5 @@
 from typing import List, Dict, Optional
 import difflib
-import json
 import re
 
 from .lang_utils import mask_terms, lang_spans
@@ -84,6 +83,7 @@ NUMERIC_RE = re.compile(
 def _extract_numbers(text: str) -> List[str]:
     """Return all numeric-like substrings from text."""
     return NUMERIC_RE.findall(text)
+
 def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
     """Call the underlying small language model and normalise its output."""
 
@@ -157,7 +157,25 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
                     "after": (m["suggest"][0] if m["suggest"] else m["word"])
                 })
 
+
     result = slm_cleanup(masked, translate_embedded)
+
+    llama = _load_llama()
+    # The stubbed slm_cleanup ignores the llama and generation parameters,
+    # but the real implementation will use them.
+    try:
+        result = slm_cleanup(
+            masked,
+            translate_embedded,
+            llama=llama,
+            temp=TEMP,
+            max_tokens=MAX_TOKENS,
+        )
+    except TypeError:
+        # Allow monkeypatched or legacy implementations that don't accept kwargs
+        result = slm_cleanup(masked, translate_embedded)
+    validate_json_schema(result)
+
     forbid_changes_in_terms(masked, result['clean_text'])
     flags.extend(result.get('flags', []))
     if _extract_numbers(masked) != _extract_numbers(result.get('clean_text', '')):
