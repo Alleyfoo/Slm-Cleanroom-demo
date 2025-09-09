@@ -1,16 +1,17 @@
 from typing import List, Dict, Optional
 import difflib
-import json
 import re
 
 from .lang_utils import mask_terms, lang_spans
 from .slm_llamacpp import slm_cleanup as _slm_cleanup
+
 
 from .guardrails import (
     forbid_changes_in_terms,
     post_validate,
     extract_json,
 )
+
 from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
 
 try:  # optional dependency
@@ -88,9 +89,23 @@ NUMERIC_RE = re.compile(
 def _extract_numbers(text: str) -> List[str]:
     """Return all numeric-like substrings from text."""
     return NUMERIC_RE.findall(text)
+
 def slm_cleanup(text: str, translate_embedded: bool, **kwargs) -> Dict:
     def _call(t: str) -> Dict:
         raw = _slm_cleanup(t, translate_embedded, **kwargs)
+
+def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
+    """Call the underlying small language model and normalise its output."""
+
+    llama = _load_llama()
+    gen = {"llama": llama, "temp": TEMP, "max_tokens": MAX_TOKENS}
+
+    def _call(t: str) -> Dict:
+        try:
+            raw = _slm_cleanup(t, translate_embedded, **gen)
+        except TypeError:
+            raw = _slm_cleanup(t, translate_embedded)
+
         if isinstance(raw, dict):
             raw = json.dumps(raw)
         return extract_json(raw)
@@ -186,9 +201,13 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
                     "after": (m["suggest"][0] if m["suggest"] else m["word"])
                 })
 
+
+    result = slm_cleanup(masked, translate_embedded)
+
     llama = _load_llama()
     # The stubbed slm_cleanup ignores the llama and generation parameters,
     # but the real implementation will use them.
+
     result = slm_cleanup(
         masked,
         translate_embedded,
@@ -197,6 +216,20 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
         max_tokens=MAX_TOKENS,
     )
     result = slm_cleanup(masked, translate_embedded)
+
+    try:
+        result = slm_cleanup(
+            masked,
+            translate_embedded,
+            llama=llama,
+            temp=TEMP,
+            max_tokens=MAX_TOKENS,
+        )
+    except TypeError:
+        # Allow monkeypatched or legacy implementations that don't accept kwargs
+        result = slm_cleanup(masked, translate_embedded)
+    validate_json_schema(result)
+
     forbid_changes_in_terms(masked, result['clean_text'])
     flags.extend(result.get('flags', []))
     if _extract_numbers(masked) != _extract_numbers(result.get('clean_text', '')):
