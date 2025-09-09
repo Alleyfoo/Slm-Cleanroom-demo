@@ -15,3 +15,10 @@ CLI example:
 ```bash
 python -m cli.clean_file input.txt -o output.json
 ```
+
+### Batch run (CSV → CSV)
+
+```bash
+python cli/clean_table.py data/mock_inputs.csv -o data/mock_outputs.csv \
+  --model-path "$PWD/models/$HF_FILENAME"
+```
