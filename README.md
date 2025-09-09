@@ -21,6 +21,8 @@ python -m app.model_download
 
 # set path for runtime
 export MODEL_PATH="$PWD/models/$HF_FILENAME"
+# optionally raise context window (only if the model supports it)
+export CTX=4096
 ```
 
 Install dependencies and run the API server:
