@@ -64,3 +64,13 @@ Run the batch cleaner with a bind-mounted model:
 docker run --rm -v $(pwd)/models:/models -v $(pwd):/app -e MODEL_PATH=/models/<file>.gguf \
   -w /app python:3.12-slim bash -lc "pip install -r requirements.txt && python cli/clean_table.py data/mock_inputs.csv -o /app/out.csv"
 ```
+
+### Benchmarking
+
+Run a quick performance benchmark on a sample of rows to guide model selection:
+
+```bash
+python tools/bench.py --file data/mock_inputs.csv --workers 2 --samples 200
+```
+
+The script reports median and 95p latency per row, throughput, JSON retry rate and flag distribution.
