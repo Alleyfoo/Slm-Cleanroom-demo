@@ -47,3 +47,13 @@ No code changes required; the pipeline auto-enables Voikko if available.
 python cli/clean_table.py data/mock_inputs.csv -o data/mock_outputs.csv \
   --model-path "$PWD/models/$HF_FILENAME"
 ```
+
+### Benchmarking
+
+Run a quick performance benchmark on a sample of rows to guide model selection:
+
+```bash
+python tools/bench.py --file data/mock_inputs.csv --workers 2 --samples 200
+```
+
+The script reports median and 95p latency per row, throughput, JSON retry rate and flag distribution.
