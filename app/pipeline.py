@@ -3,9 +3,9 @@ import difflib
 import re
 
 from .lang_utils import mask_terms, lang_spans
-from .slm_llamacpp import slm_cleanup
+from .slm_llamacpp import slm_cleanup as _slm_cleanup
 
-from .guardrails import validate_json_schema, forbid_changes_in_terms, post_validate
+from .guardrails import extract_json, forbid_changes_in_terms
 from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
 
 try:  # optional dependency
@@ -84,6 +84,48 @@ def _extract_numbers(text: str) -> List[str]:
     """Return all numeric-like substrings from text."""
     return NUMERIC_RE.findall(text)
 
+def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
+    """Call the underlying small language model and normalise its output."""
+
+    llama = _load_llama()
+    gen = {"llama": llama, "temp": TEMP, "max_tokens": MAX_TOKENS}
+
+    def _call(t: str) -> Dict:
+        try:
+            raw = _slm_cleanup(t, translate_embedded, **gen)
+        except TypeError:
+            raw = _slm_cleanup(t, translate_embedded)
+        if isinstance(raw, dict):
+            raw = json.dumps(raw)
+        return extract_json(raw)
+
+    try:
+        return _call(text)
+    except Exception:
+        parts = [m.group(0) for m in re.finditer(r"[^.!?]+[.!?]?\s*", text)]
+        clean_parts: List[str] = []
+        flags: List = []
+        changes: List = []
+        offset = 0
+        for part in parts:
+            res = _call(part)
+            ct = res.get("clean_text", "")
+            clean_parts.append(ct)
+            for f in res.get("flags", []):
+                item = f
+                if isinstance(item, dict) and "span" in item:
+                    s, e = item["span"]
+                    item = {**item, "span": [s + offset, e + offset]}
+                flags.append(item)
+            for c in res.get("changes", []):
+                item = c
+                if isinstance(item, dict) and "span" in item:
+                    s, e = item["span"]
+                    item = {**item, "span": [s + offset, e + offset]}
+                changes.append(item)
+            offset += len(ct)
+        return {"clean_text": "".join(clean_parts), "flags": flags, "changes": changes}
+
 def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: Optional[List[str]] = None) -> Dict:
     masked = mask_terms(text, protected_terms or [])
 
@@ -115,6 +157,9 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
                     "after": (m["suggest"][0] if m["suggest"] else m["word"])
                 })
 
+
+    result = slm_cleanup(masked, translate_embedded)
+
     llama = _load_llama()
     # The stubbed slm_cleanup ignores the llama and generation parameters,
     # but the real implementation will use them.
@@ -130,6 +175,7 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
         # Allow monkeypatched or legacy implementations that don't accept kwargs
         result = slm_cleanup(masked, translate_embedded)
     validate_json_schema(result)
+
     forbid_changes_in_terms(masked, result['clean_text'])
     flags.extend(result.get('flags', []))
     if _extract_numbers(masked) != _extract_numbers(result.get('clean_text', '')):
