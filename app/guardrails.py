@@ -1,12 +1,21 @@
+import json
 import re
 from typing import Dict, List
 
+SCHEMA_KEYS = {"clean_text", "flags", "changes"}
 
-def validate_json_schema(obj: Dict) -> None:
-    required = {"clean_text": str, "flags": list, "changes": list}
-    for key, typ in required.items():
-        if key not in obj or not isinstance(obj[key], typ):
-            raise ValueError(f"Invalid schema: {key}")
+
+def extract_json(text: str) -> Dict:
+    i, j = text.find("{"), text.rfind("}")
+    if i == -1 or j == -1 or i > j:
+        raise ValueError("No JSON object found")
+    obj = json.loads(text[i : j + 1])
+    if not isinstance(obj, dict) or not SCHEMA_KEYS.issubset(obj.keys()):
+        raise ValueError("JSON schema mismatch")
+    for k in ("flags", "changes"):
+        if not isinstance(obj.get(k, []), list):
+            raise ValueError(f"{k} must be a list")
+    return obj
 
 
 def forbid_changes_in_terms(original: str, clean_text: str) -> None:

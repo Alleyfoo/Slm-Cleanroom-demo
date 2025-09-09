@@ -48,8 +48,37 @@ No code changes required; the pipeline auto-enables Voikko if available.
 
 ```bash
 python cli/clean_table.py data/mock_inputs.csv -o data/mock_outputs.csv \
-  --model-path "$PWD/models/$HF_FILENAME"
+  --model-path "$PWD/models/$HF_FILENAME" --workers 4
+```
+
+### Streamlit review UI
+
+```bash
+streamlit run ui/app.py
+```
+
+### Docker
+Build an image from the provided Dockerfile:
+```bash
+docker build -t slm-cleanroom .
 ```
 
 ### Contributing
 Before proposing changes, update or reference the relevant sections in [docs/design_document.md](docs/design_document.md). PRs without a Design Document reference may be rejected.
+
+Run the batch cleaner with a bind-mounted model:
+```bash
+docker run --rm -v $(pwd)/models:/models -v $(pwd):/app -e MODEL_PATH=/models/<file>.gguf \
+  -w /app python:3.12-slim bash -lc "pip install -r requirements.txt && python cli/clean_table.py data/mock_inputs.csv -o /app/out.csv"
+```
+
+### Benchmarking
+
+Run a quick performance benchmark on a sample of rows to guide model selection:
+
+```bash
+python tools/bench.py --file data/mock_inputs.csv --workers 2 --samples 200
+```
+
+The script reports median and 95p latency per row, throughput, JSON retry rate and flag distribution.
+
