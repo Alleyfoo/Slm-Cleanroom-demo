@@ -2,6 +2,9 @@
 
 Local product description cleaner pipeline.
 
+> **Design Document:** see [docs/design_document.md](docs/design_document.md).  
+> All new changes must reference the sections they touch in the Design Document.
+
 ## Getting started
 
 ### Quickstart (Codespace/local)
@@ -37,13 +40,16 @@ On Ubuntu/Debian:
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3-libvoikko voikko-fi
-
+```
 
 No code changes required; the pipeline auto-enables Voikko if available.
-=======
+
 ### Batch run (CSV → CSV)
 
 ```bash
 python cli/clean_table.py data/mock_inputs.csv -o data/mock_outputs.csv \
   --model-path "$PWD/models/$HF_FILENAME"
 ```
+
+### Contributing
+Before proposing changes, update or reference the relevant sections in [docs/design_document.md](docs/design_document.md). PRs without a Design Document reference may be rejected.
