@@ -4,8 +4,32 @@ import json
 import re
 
 from .lang_utils import mask_terms, lang_spans
-from .slm_llamacpp import slm_cleanup as _slm_cleanup
-from .guardrails import extract_json, forbid_changes_in_terms, post_validate
+from .slm_llamacpp import slm_cleanup
+from .guardrails import validate_json_schema, forbid_changes_in_terms, post_validate
+from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
+
+try:  # optional dependency
+    from llama_cpp import Llama  # type: ignore
+except Exception:  # pragma: no cover - llama_cpp is optional
+    Llama = None  # type: ignore
+
+_LLAMA = None
+
+
+def _load_llama():
+    """Lazily load llama-cpp model using environment configuration."""
+    global _LLAMA
+    if _LLAMA is None and Llama is not None and MODEL_PATH:
+        try:  # pragma: no cover - exercised only when llama_cpp is installed
+            _LLAMA = Llama(
+                model_path=MODEL_PATH,
+                n_threads=N_THREADS,
+                n_ctx=CTX,
+            )
+        except Exception:
+            _LLAMA = None
+    return _LLAMA
+
 
 try:
     from spellchecker import SpellChecker
@@ -108,6 +132,17 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
                     "after": (m["suggest"][0] if m["suggest"] else m["word"])
                 })
 
+    llama = _load_llama()
+    # The stubbed slm_cleanup ignores the llama and generation parameters,
+    # but the real implementation will use them.
+    result = slm_cleanup(
+        masked,
+        translate_embedded,
+        llama=llama,
+        temp=TEMP,
+        max_tokens=MAX_TOKENS,
+    )
+    validate_json_schema(result)
     result = slm_cleanup(masked, translate_embedded)
     forbid_changes_in_terms(masked, result['clean_text'])
     flags.extend(result.get('flags', []))
