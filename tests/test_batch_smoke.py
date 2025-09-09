@@ -1,3 +1,8 @@
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from app.pipeline import run_pipeline
 
 def test_embedded_en_flag():
