@@ -3,6 +3,8 @@ import os
 import time
 import json
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+
 import pandas as pd
 from app.io_utils import read_table, write_table, parse_terms, serialize
 
@@ -23,6 +25,12 @@ def main():
         "--model-path",
         default=None,
         help="Path to .gguf model (overrides $MODEL_PATH)",
+    )
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of worker threads (default 4)",
     )
     args = ap.parse_args()
 
@@ -47,21 +55,34 @@ def main():
     has_terms = "protected_terms" in df.columns
     has_translate = "translate_embedded" in df.columns
 
-    clean_texts = []
-    flags_col = []
-    changes_col = []
-    mixed_col = []
+    clean_texts: list[str] = []
+    flags_col: list[str] = []
+    changes_col: list[str] = []
+    mixed_col: list[bool] = []
 
-    for _, row in df.iterrows():
+    def process_row(row: dict):
         text = str(row["text"])
         terms = parse_terms(row["protected_terms"]) if has_terms else []
         translate = bool(row["translate_embedded"]) if has_translate else False
 
         res = run_pipeline(text, translate_embedded=translate, protected_terms=terms)
-        clean_texts.append(res["clean_text"])
-        flags_col.append(serialize(res["flags"]))
-        changes_col.append(serialize(res["changes"]))
-        mixed_col.append(res["mixed_languages"])
+        return (
+            res["clean_text"],
+            serialize(res["flags"]),
+            serialize(res["changes"]),
+            res["mixed_languages"],
+        )
+
+    rows = df.to_dict("records")
+    chunk_size = max(1, args.workers * 4)
+    with ThreadPoolExecutor(max_workers=args.workers) as ex:
+        for i in range(0, len(rows), chunk_size):
+            chunk = rows[i : i + chunk_size]
+            for clean, flags, changes, mixed in ex.map(process_row, chunk):
+                clean_texts.append(clean)
+                flags_col.append(flags)
+                changes_col.append(changes)
+                mixed_col.append(mixed)
 
     df["clean_text"] = clean_texts
     df["flags"] = flags_col
@@ -71,8 +92,13 @@ def main():
     write_table(df, str(out))
     total = len(df)
     flag_count = sum(len(json.loads(x)) if isinstance(x, str) else 0 for x in df["flags"])
-    elapsed = int((time.time() - t0) * 1000)
-    print(f"Processed {total} rows, flags={flag_count}, time={elapsed} ms → {out}")
+    elapsed = time.time() - t0
+    elapsed_ms = int(elapsed * 1000)
+    throughput = total / elapsed if elapsed > 0 else 0
+    print(
+        f"Processed {total} rows, flags={flag_count}, time={elapsed_ms} ms "
+        f"({throughput:.1f} rows/sec) → {out}"
+    )
 
 
 if __name__ == "__main__":
