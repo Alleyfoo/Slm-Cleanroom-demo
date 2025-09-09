@@ -5,6 +5,7 @@ import re
 
 from .lang_utils import mask_terms, lang_spans
 from .slm_llamacpp import slm_cleanup
+
 from .guardrails import validate_json_schema, forbid_changes_in_terms, post_validate
 from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
 
@@ -29,7 +30,6 @@ def _load_llama():
         except Exception:
             _LLAMA = None
     return _LLAMA
-
 
 try:
     from spellchecker import SpellChecker
@@ -67,6 +67,24 @@ def fi_misspellings_voikko(text: str):
             out.append({"start": m.start(), "end": m.end(), "word": w, "suggest": sugg[:3]})
     return out
 
+NUMERIC_RE = re.compile(
+    r"""
+    [-+]?
+    (?:
+        \d{1,3}(?:\.\d{3})+(?:,\d+)? |  # thousand separators with optional decimal comma
+        \d+(?:[.,]\d+)?                   # plain number with optional decimal part
+    )
+    (?:\s*[\u2013-]\s*[-+]?(?:\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?))?  # optional range
+    %?                                      # optional percentage
+    """,
+    re.VERBOSE,
+)
+
+
+def _extract_numbers(text: str) -> List[str]:
+    """Return all numeric-like substrings from text."""
+    return NUMERIC_RE.findall(text)
+=======
 def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
     def _call(t: str) -> Dict:
         raw = _slm_cleanup(t, translate_embedded)
@@ -146,7 +164,8 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
     result = slm_cleanup(masked, translate_embedded)
     forbid_changes_in_terms(masked, result['clean_text'])
     flags.extend(result.get('flags', []))
-    flags.extend(post_validate(masked, result))
+    if _extract_numbers(masked) != _extract_numbers(result.get('clean_text', '')):
+        flags.append('numeric_change')
 
     changes = result.get('changes', [])
     changes.extend(spell_changes)
