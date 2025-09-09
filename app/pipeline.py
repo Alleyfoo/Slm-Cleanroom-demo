@@ -4,9 +4,9 @@ import json
 import re
 
 from .lang_utils import mask_terms, lang_spans
-from .slm_llamacpp import slm_cleanup
+from .slm_llamacpp import slm_cleanup as _slm_cleanup
 
-from .guardrails import validate_json_schema, forbid_changes_in_terms, post_validate
+from .guardrails import extract_json, forbid_changes_in_terms
 from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
 
 try:  # optional dependency
@@ -84,10 +84,17 @@ NUMERIC_RE = re.compile(
 def _extract_numbers(text: str) -> List[str]:
     """Return all numeric-like substrings from text."""
     return NUMERIC_RE.findall(text)
-=======
 def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
+    """Call the underlying small language model and normalise its output."""
+
+    llama = _load_llama()
+    gen = {"llama": llama, "temp": TEMP, "max_tokens": MAX_TOKENS}
+
     def _call(t: str) -> Dict:
-        raw = _slm_cleanup(t, translate_embedded)
+        try:
+            raw = _slm_cleanup(t, translate_embedded, **gen)
+        except TypeError:
+            raw = _slm_cleanup(t, translate_embedded)
         if isinstance(raw, dict):
             raw = json.dumps(raw)
         return extract_json(raw)
@@ -150,17 +157,6 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
                     "after": (m["suggest"][0] if m["suggest"] else m["word"])
                 })
 
-    llama = _load_llama()
-    # The stubbed slm_cleanup ignores the llama and generation parameters,
-    # but the real implementation will use them.
-    result = slm_cleanup(
-        masked,
-        translate_embedded,
-        llama=llama,
-        temp=TEMP,
-        max_tokens=MAX_TOKENS,
-    )
-    validate_json_schema(result)
     result = slm_cleanup(masked, translate_embedded)
     forbid_changes_in_terms(masked, result['clean_text'])
     flags.extend(result.get('flags', []))
