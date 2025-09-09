@@ -1,14 +1,40 @@
 import argparse
+import os
+import time
+import json
 from pathlib import Path
 import pandas as pd
 from app.io_utils import read_table, write_table, parse_terms, serialize
-from app.pipeline import run_pipeline
+
 
 def main():
     ap = argparse.ArgumentParser(description="Batch-clean CSV/Excel table")
-    ap.add_argument("input", help="Input CSV/Excel with columns: id,text,(optional)protected_terms,(optional)translate_embedded")
-    ap.add_argument("-o", "--output", help="Output path (.csv or .xlsx). Default: <input>.clean.csv", default=None)
+    ap.add_argument(
+        "input",
+        help="Input CSV/Excel with columns: id,text,(optional)protected_terms,(optional)translate_embedded",
+    )
+    ap.add_argument(
+        "-o",
+        "--output",
+        help="Output path (.csv or .xlsx). Default: <input>.clean.csv",
+        default=None,
+    )
+    ap.add_argument(
+        "--model-path",
+        default=None,
+        help="Path to .gguf model (overrides $MODEL_PATH)",
+    )
     args = ap.parse_args()
+
+    mp = args.model_path or os.environ.get("MODEL_PATH")
+    if not mp or not Path(mp).exists():
+        raise SystemExit(
+            "MODEL_PATH is not set or file not found. Use --model-path or export MODEL_PATH=<path/to/model.gguf>"
+        )
+    os.environ["MODEL_PATH"] = str(mp)
+    t0 = time.time()
+
+    from app.pipeline import run_pipeline
 
     inp = Path(args.input)
     out = Path(args.output) if args.output else inp.with_suffix(".clean.csv")
@@ -43,7 +69,11 @@ def main():
     df["mixed_languages"] = mixed_col
 
     write_table(df, str(out))
-    print(f"Wrote {out}")
+    total = len(df)
+    flag_count = sum(len(json.loads(x)) if isinstance(x, str) else 0 for x in df["flags"])
+    elapsed = int((time.time() - t0) * 1000)
+    print(f"Processed {total} rows, flags={flag_count}, time={elapsed} ms → {out}")
+
 
 if __name__ == "__main__":
     main()
