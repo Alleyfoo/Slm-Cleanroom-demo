@@ -2,6 +2,9 @@
 
 Local product description cleaner pipeline.
 
+> **Design Document:** see [docs/design_document.md](docs/design_document.md).  
+> All new changes must reference the sections they touch in the Design Document.
+
 ## Getting started
 
 ### Quickstart (Codespace/local)
@@ -37,7 +40,7 @@ On Ubuntu/Debian:
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3-libvoikko voikko-fi
-
+```
 
 No code changes required; the pipeline auto-enables Voikko if available.
 
@@ -59,6 +62,10 @@ Build an image from the provided Dockerfile:
 ```bash
 docker build -t slm-cleanroom .
 ```
+
+### Contributing
+Before proposing changes, update or reference the relevant sections in [docs/design_document.md](docs/design_document.md). PRs without a Design Document reference may be rejected.
+
 Run the batch cleaner with a bind-mounted model:
 ```bash
 docker run --rm -v $(pwd)/models:/models -v $(pwd):/app -e MODEL_PATH=/models/<file>.gguf \
@@ -74,3 +81,4 @@ python tools/bench.py --file data/mock_inputs.csv --workers 2 --samples 200
 ```
 
 The script reports median and 95p latency per row, throughput, JSON retry rate and flag distribution.
+
