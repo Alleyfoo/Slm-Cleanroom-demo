@@ -1,7 +1,6 @@
 import argparse
 import os
 import time
-import json
 from pathlib import Path
 import pandas as pd
 from app.io_utils import read_table, write_table, parse_terms, serialize
@@ -51,17 +50,26 @@ def main():
     flags_col = []
     changes_col = []
     mixed_col = []
+    flag_stats = {"embedded_en": 0, "term_change": 0}
 
-    for _, row in df.iterrows():
-        text = str(row["text"])
-        terms = parse_terms(row["protected_terms"]) if has_terms else []
-        translate = bool(row["translate_embedded"]) if has_translate else False
+    for i, row in enumerate(df.itertuples()):
+        text = str(row.text)
+        terms = parse_terms(row.protected_terms) if has_terms else []
+        translate = bool(row.translate_embedded) if has_translate else False
 
         res = run_pipeline(text, translate_embedded=translate, protected_terms=terms)
         clean_texts.append(res["clean_text"])
         flags_col.append(serialize(res["flags"]))
         changes_col.append(serialize(res["changes"]))
         mixed_col.append(res["mixed_languages"])
+
+        for f in res["flags"]:
+            t = f.get("type")
+            if t:
+                flag_stats[t] = flag_stats.get(t, 0) + 1
+
+        if (i + 1) % 500 == 0:
+            print(f"Processed {i + 1}/{len(df)} rows")
 
     df["clean_text"] = clean_texts
     df["flags"] = flags_col
@@ -70,9 +78,11 @@ def main():
 
     write_table(df, str(out))
     total = len(df)
-    flag_count = sum(len(json.loads(x)) if isinstance(x, str) else 0 for x in df["flags"])
+    flag_count = sum(flag_stats.values())
     elapsed = int((time.time() - t0) * 1000)
+    summary = ", ".join(f"{k}={v}" for k, v in sorted(flag_stats.items()))
     print(f"Processed {total} rows, flags={flag_count}, time={elapsed} ms → {out}")
+    print(f"Summary: {summary}")
 
 
 if __name__ == "__main__":
