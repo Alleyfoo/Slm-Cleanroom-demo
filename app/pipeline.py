@@ -5,7 +5,13 @@ import re
 from .lang_utils import mask_terms, lang_spans
 from .slm_llamacpp import slm_cleanup as _slm_cleanup
 
-from .guardrails import extract_json, forbid_changes_in_terms
+
+from .guardrails import (
+    forbid_changes_in_terms,
+    post_validate,
+    extract_json,
+)
+
 from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
 
 try:  # optional dependency
@@ -84,6 +90,10 @@ def _extract_numbers(text: str) -> List[str]:
     """Return all numeric-like substrings from text."""
     return NUMERIC_RE.findall(text)
 
+def slm_cleanup(text: str, translate_embedded: bool, **kwargs) -> Dict:
+    def _call(t: str) -> Dict:
+        raw = _slm_cleanup(t, translate_embedded, **kwargs)
+
 def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
     """Call the underlying small language model and normalise its output."""
 
@@ -95,6 +105,7 @@ def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
             raw = _slm_cleanup(t, translate_embedded, **gen)
         except TypeError:
             raw = _slm_cleanup(t, translate_embedded)
+
         if isinstance(raw, dict):
             raw = json.dumps(raw)
         return extract_json(raw)
@@ -125,6 +136,39 @@ def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
                 changes.append(item)
             offset += len(ct)
         return {"clean_text": "".join(clean_parts), "flags": flags, "changes": changes}
+
+
+def normalize_flags_and_changes(result: Dict, masked: str) -> Dict:
+    flags_raw = result.get("flags", [])
+    if not isinstance(flags_raw, list):
+        flags_raw = []
+    normalized_flags: List[Dict] = []
+    numeric_change = False
+    for f in flags_raw:
+        if isinstance(f, dict):
+            if f.get("type") == "numeric_change":
+                numeric_change = True
+            normalized_flags.append(f)
+        elif isinstance(f, str):
+            if f == "numeric_change":
+                numeric_change = True
+            normalized_flags.append({"type": f})
+        # silently drop other types
+
+    if numeric_change:
+        result["clean_text"] = masked
+        normalized_flags = [f for f in normalized_flags if f.get("type") != "numeric_change"]
+        normalized_flags.append({"type": "numeric_change"})
+        result["changes"] = []
+
+    result["flags"] = normalized_flags
+
+    changes_raw = result.get("changes", [])
+    if not isinstance(changes_raw, list):
+        changes_raw = []
+    result["changes"] = [c for c in changes_raw if isinstance(c, dict)]
+
+    return result
 
 def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: Optional[List[str]] = None) -> Dict:
     masked = mask_terms(text, protected_terms or [])
@@ -163,6 +207,16 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
     llama = _load_llama()
     # The stubbed slm_cleanup ignores the llama and generation parameters,
     # but the real implementation will use them.
+
+    result = slm_cleanup(
+        masked,
+        translate_embedded,
+        llama=llama,
+        temp=TEMP,
+        max_tokens=MAX_TOKENS,
+    )
+    result = slm_cleanup(masked, translate_embedded)
+
     try:
         result = slm_cleanup(
             masked,
@@ -187,7 +241,8 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
         diff = list(difflib.unified_diff(masked.splitlines(), result['clean_text'].splitlines(), lineterm=''))
         changes.append({'source': 'diff', 'type': 'rewrite', 'diff': '\n'.join(diff)})
 
-    return {'clean_text': result['clean_text'], 'flags': flags, 'changes': changes, 'mixed_languages': mixed_languages}
+    final = {'clean_text': result['clean_text'], 'flags': flags, 'changes': changes, 'mixed_languages': mixed_languages}
+    return normalize_flags_and_changes(final, masked)
 
 def run_pipeline_like_this():
     example = "Tämä takki on super warm for winter commutes kaupungilla."
