@@ -40,10 +40,27 @@ sudo apt-get install -y python3-libvoikko voikko-fi
 
 
 No code changes required; the pipeline auto-enables Voikko if available.
-=======
+
 ### Batch run (CSV → CSV)
 
 ```bash
 python cli/clean_table.py data/mock_inputs.csv -o data/mock_outputs.csv \
-  --model-path "$PWD/models/$HF_FILENAME"
+  --model-path "$PWD/models/$HF_FILENAME" --workers 4
+```
+
+### Streamlit review UI
+
+```bash
+streamlit run ui/app.py
+```
+
+### Docker
+Build an image from the provided Dockerfile:
+```bash
+docker build -t slm-cleanroom .
+```
+Run the batch cleaner with a bind-mounted model:
+```bash
+docker run --rm -v $(pwd)/models:/models -v $(pwd):/app -e MODEL_PATH=/models/<file>.gguf \
+  -w /app python:3.12-slim bash -lc "pip install -r requirements.txt && python cli/clean_table.py data/mock_inputs.csv -o /app/out.csv"
 ```
