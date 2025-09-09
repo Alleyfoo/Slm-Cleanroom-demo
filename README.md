@@ -15,3 +15,12 @@ CLI example:
 ```bash
 python -m cli.clean_file input.txt -o output.json
 ```
+
+### Optional Finnish spellcheck (Voikko)
+On Ubuntu/Debian:
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-libvoikko voikko-fi
+```
+
+No code changes required; the pipeline auto-enables Voikko if available.

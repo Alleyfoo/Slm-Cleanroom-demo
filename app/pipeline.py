@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional
 import difflib
+import re
 
 from .lang_utils import mask_terms, lang_spans
 from .slm_llamacpp import slm_cleanup
@@ -11,16 +12,34 @@ try:
 except Exception:
     SP_EN = None
 
+# Optional Voikko (FI)
+_VOIKKO = None
+try:
+    import libvoikko
+    _VOIKKO = libvoikko.Voikko("fi")
+except Exception:
+    _VOIKKO = None
+
 def en_misspellings(text: str):
     if SP_EN is None:
         return []
     out = []
-    import re
     for m in re.finditer(r"[A-Za-z][A-Za-z\-']+", text):
         w = m.group(0)
         if w.lower() in SP_EN.unknown([w]):
             cand = list(SP_EN.candidates(w))
             out.append({"start": m.start(), "end": m.end(), "word": w, "suggest": cand[:3]})
+    return out
+
+def fi_misspellings_voikko(text: str):
+    if _VOIKKO is None:
+        return []
+    out = []
+    for m in re.finditer(r"[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö\-']+", text):
+        w = m.group(0)
+        if not _VOIKKO.spell(w):
+            sugg = _VOIKKO.suggest(w) or []
+            out.append({"start": m.start(), "end": m.end(), "word": w, "suggest": sugg[:3]})
     return out
 
 def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: Optional[List[str]] = None) -> Dict:
@@ -41,6 +60,15 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
                     "span": [s["start"] + m["start"], s["start"] + m["end"]],
                     "type": "spelling",
                     "source": "spell",
+                    "before": m["word"],
+                    "after": (m["suggest"][0] if m["suggest"] else m["word"])
+                })
+        if s["lang"].startswith("fi"):
+            for m in fi_misspellings_voikko(s["text"]):
+                spell_changes.append({
+                    "span": [s["start"] + m["start"], s["start"] + m["end"]],
+                    "type": "spelling",
+                    "source": "voikko",
                     "before": m["word"],
                     "after": (m["suggest"][0] if m["suggest"] else m["word"])
                 })
