@@ -40,10 +40,16 @@ sudo apt-get install -y python3-libvoikko voikko-fi
 
 
 No code changes required; the pipeline auto-enables Voikko if available.
-=======
+
 ### Batch run (CSV → CSV)
 
 ```bash
 python cli/clean_table.py data/mock_inputs.csv -o data/mock_outputs.csv \
   --model-path "$PWD/models/$HF_FILENAME"
+```
+
+### Streamlit review UI
+
+```bash
+streamlit run ui/app.py
 ```
