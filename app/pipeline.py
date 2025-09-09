@@ -4,9 +4,14 @@ import json
 import re
 
 from .lang_utils import mask_terms, lang_spans
-from .slm_llamacpp import slm_cleanup
+from .slm_llamacpp import slm_cleanup as _slm_cleanup
 
-from .guardrails import validate_json_schema, forbid_changes_in_terms, post_validate
+from .guardrails import (
+    validate_json_schema,
+    forbid_changes_in_terms,
+    post_validate,
+    extract_json,
+)
 from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
 
 try:  # optional dependency
@@ -84,10 +89,17 @@ NUMERIC_RE = re.compile(
 def _extract_numbers(text: str) -> List[str]:
     """Return all numeric-like substrings from text."""
     return NUMERIC_RE.findall(text)
-=======
-def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
+def slm_cleanup(text: str, translate_embedded: bool, **kwargs) -> Dict:
+    """Adapter around the low level ``_slm_cleanup`` function.
+
+    The wrapper forwards any additional keyword arguments to the underlying
+    implementation and ensures that a JSON object with the expected schema is
+    always returned.  If the model fails to produce valid JSON, the input text
+    is split into sentence-like parts and processed piece by piece.
+    """
+
     def _call(t: str) -> Dict:
-        raw = _slm_cleanup(t, translate_embedded)
+        raw = _slm_cleanup(t, translate_embedded, **kwargs)
         if isinstance(raw, dict):
             raw = json.dumps(raw)
         return extract_json(raw)
@@ -101,7 +113,12 @@ def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
         changes: List = []
         offset = 0
         for part in parts:
-            res = _call(part)
+            try:
+                res = _call(part)
+            except Exception:
+                # If even individual parts cannot be parsed, fall back to
+                # returning the original input verbatim.
+                return {"clean_text": text, "flags": [], "changes": []}
             ct = res.get("clean_text", "")
             clean_parts.append(ct)
             for f in res.get("flags", []):
@@ -164,8 +181,21 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
     result = slm_cleanup(masked, translate_embedded)
     forbid_changes_in_terms(masked, result['clean_text'])
     flags.extend(result.get('flags', []))
+    # Normalise flags to dictionaries and ignore any numeric change markers
+    # coming from the model itself; numeric diffs are detected separately.
+    normalised: List[Dict] = []
+    for f in flags:
+        if isinstance(f, str):
+            if f == 'numeric_change':
+                continue
+            normalised.append({'type': f})
+        elif isinstance(f, dict):
+            if f.get('type') == 'numeric_change':
+                continue
+            normalised.append(f)
+    flags = normalised
     if _extract_numbers(masked) != _extract_numbers(result.get('clean_text', '')):
-        flags.append('numeric_change')
+        flags.append({'type': 'numeric_change'})
 
     changes = result.get('changes', [])
     changes.extend(spell_changes)
