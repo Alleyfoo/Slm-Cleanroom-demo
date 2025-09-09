@@ -5,21 +5,6 @@ from typing import Dict, List
 SCHEMA_KEYS = {"clean_text", "flags", "changes"}
 
 
-def validate_json_schema(obj: Dict) -> None:
-    """Validate that *obj* contains the expected top-level keys.
-
-    The cleanup pipeline expects the language model to return a JSON object
-    with ``clean_text``, ``flags`` and ``changes`` fields.  Some tests stub
-    out the model and feed arbitrary strings through the adapter, so this
-    lightweight check ensures we fail fast if the structure is unexpected.
-    """
-    if not isinstance(obj, dict):
-        raise ValueError("Result must be a dict")
-    missing = SCHEMA_KEYS.difference(obj.keys())
-    if missing:
-        raise ValueError("JSON schema mismatch")
-
-
 def extract_json(text: str) -> Dict:
     i, j = text.find("{"), text.rfind("}")
     if i == -1 or j == -1 or i > j:

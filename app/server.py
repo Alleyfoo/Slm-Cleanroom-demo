@@ -13,5 +13,9 @@ def healthz():
 
 @app.post('/clean', response_model=CleanResponse)
 def clean(req: CleanRequest):
-    result = run_pipeline(req.text, terms=req.terms, translate_embedded=req.translate_embedded)
+    result = run_pipeline(
+        req.text,
+        translate_embedded=req.translate_embedded,
+        protected_terms=req.terms,
+    )
     return CleanResponse(**result)

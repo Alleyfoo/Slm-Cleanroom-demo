@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional
 import difflib
+import json
 import re
 
 from .lang_utils import mask_terms, lang_spans
@@ -99,12 +100,12 @@ def slm_cleanup(text: str, translate_embedded: bool, **kwargs) -> Dict:
     is split into sentence-like parts and processed piece by piece.
     """
 
-    def _call(t: str) -> Dict:
-        raw = _slm_cleanup(t, translate_embedded, **kwargs)
-
-
-    llama = _load_llama()
-    gen = {"llama": llama, "temp": TEMP, "max_tokens": MAX_TOKENS}
+    llama = kwargs.get("llama", _load_llama())
+    gen = {
+        "llama": llama,
+        "temp": kwargs.get("temp", TEMP),
+        "max_tokens": kwargs.get("max_tokens", MAX_TOKENS),
+    }
 
     def _call(t: str) -> Dict:
         try:
@@ -212,21 +213,9 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
                     "after": (m["suggest"][0] if m["suggest"] else m["word"])
                 })
 
-
-    result = slm_cleanup(masked, translate_embedded)
-
     llama = _load_llama()
     # The stubbed slm_cleanup ignores the llama and generation parameters,
     # but the real implementation will use them.
-
-    result = slm_cleanup(
-        masked,
-        translate_embedded,
-        llama=llama,
-        temp=TEMP,
-        max_tokens=MAX_TOKENS,
-    )
-    result = slm_cleanup(masked, translate_embedded)
 
     try:
         result = slm_cleanup(
