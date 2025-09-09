@@ -18,8 +18,10 @@ def write_table(df: pd.DataFrame, path: str) -> None:
         df.to_csv(p, index=False)
 
 def parse_terms(x: Any) -> List[str]:
-    if x is None or (isinstance(x, float) and pd.isna(x)): return []
-    if isinstance(x, list): return [str(t).strip() for t in x]
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return []
+    if isinstance(x, list):
+        return [str(t).strip() for t in x]
     # "term1; term2; term3"
     return [t.strip() for t in str(x).split(";") if t.strip()]
 
