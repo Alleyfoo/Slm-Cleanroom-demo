@@ -1,10 +1,35 @@
 from typing import List, Dict, Optional
 import difflib
+import json
 import re
 
 from .lang_utils import mask_terms, lang_spans
 from .slm_llamacpp import slm_cleanup
+
 from .guardrails import validate_json_schema, forbid_changes_in_terms, post_validate
+from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
+
+try:  # optional dependency
+    from llama_cpp import Llama  # type: ignore
+except Exception:  # pragma: no cover - llama_cpp is optional
+    Llama = None  # type: ignore
+
+_LLAMA = None
+
+
+def _load_llama():
+    """Lazily load llama-cpp model using environment configuration."""
+    global _LLAMA
+    if _LLAMA is None and Llama is not None and MODEL_PATH:
+        try:  # pragma: no cover - exercised only when llama_cpp is installed
+            _LLAMA = Llama(
+                model_path=MODEL_PATH,
+                n_threads=N_THREADS,
+                n_ctx=CTX,
+            )
+        except Exception:
+            _LLAMA = None
+    return _LLAMA
 
 try:
     from spellchecker import SpellChecker
@@ -42,6 +67,58 @@ def fi_misspellings_voikko(text: str):
             out.append({"start": m.start(), "end": m.end(), "word": w, "suggest": sugg[:3]})
     return out
 
+NUMERIC_RE = re.compile(
+    r"""
+    [-+]?
+    (?:
+        \d{1,3}(?:\.\d{3})+(?:,\d+)? |  # thousand separators with optional decimal comma
+        \d+(?:[.,]\d+)?                   # plain number with optional decimal part
+    )
+    (?:\s*[\u2013-]\s*[-+]?(?:\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?))?  # optional range
+    %?                                      # optional percentage
+    """,
+    re.VERBOSE,
+)
+
+
+def _extract_numbers(text: str) -> List[str]:
+    """Return all numeric-like substrings from text."""
+    return NUMERIC_RE.findall(text)
+=======
+def slm_cleanup(text: str, translate_embedded: bool) -> Dict:
+    def _call(t: str) -> Dict:
+        raw = _slm_cleanup(t, translate_embedded)
+        if isinstance(raw, dict):
+            raw = json.dumps(raw)
+        return extract_json(raw)
+
+    try:
+        return _call(text)
+    except Exception:
+        parts = [m.group(0) for m in re.finditer(r"[^.!?]+[.!?]?\s*", text)]
+        clean_parts: List[str] = []
+        flags: List = []
+        changes: List = []
+        offset = 0
+        for part in parts:
+            res = _call(part)
+            ct = res.get("clean_text", "")
+            clean_parts.append(ct)
+            for f in res.get("flags", []):
+                item = f
+                if isinstance(item, dict) and "span" in item:
+                    s, e = item["span"]
+                    item = {**item, "span": [s + offset, e + offset]}
+                flags.append(item)
+            for c in res.get("changes", []):
+                item = c
+                if isinstance(item, dict) and "span" in item:
+                    s, e = item["span"]
+                    item = {**item, "span": [s + offset, e + offset]}
+                changes.append(item)
+            offset += len(ct)
+        return {"clean_text": "".join(clean_parts), "flags": flags, "changes": changes}
+
 def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: Optional[List[str]] = None) -> Dict:
     masked = mask_terms(text, protected_terms or [])
 
@@ -73,11 +150,22 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
                     "after": (m["suggest"][0] if m["suggest"] else m["word"])
                 })
 
-    result = slm_cleanup(masked, translate_embedded)
+    llama = _load_llama()
+    # The stubbed slm_cleanup ignores the llama and generation parameters,
+    # but the real implementation will use them.
+    result = slm_cleanup(
+        masked,
+        translate_embedded,
+        llama=llama,
+        temp=TEMP,
+        max_tokens=MAX_TOKENS,
+    )
     validate_json_schema(result)
+    result = slm_cleanup(masked, translate_embedded)
     forbid_changes_in_terms(masked, result['clean_text'])
     flags.extend(result.get('flags', []))
-    flags.extend(post_validate(masked, result))
+    if _extract_numbers(masked) != _extract_numbers(result.get('clean_text', '')):
+        flags.append('numeric_change')
 
     changes = result.get('changes', [])
     changes.extend(spell_changes)
