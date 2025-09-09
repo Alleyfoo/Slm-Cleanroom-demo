@@ -1,5 +1,6 @@
 import os
 
+
 MODEL_PATH = os.environ.get('MODEL_PATH')
 N_THREADS = int(os.environ.get('N_THREADS', '8'))
 CTX = int(os.environ.get('CTX', '2048'))
