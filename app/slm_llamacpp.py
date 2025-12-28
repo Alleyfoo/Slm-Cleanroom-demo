@@ -16,7 +16,8 @@ except Exception:  # pragma: no cover - llama_cpp is optional
 # Generation system prompt and JSON sentinels
 SYSTEM = (
     "Olet kielipuhdistusagentti. A,lA muuta merkitystA. "
-    "A,lA muuta <TERM>ƒ?İ</TERM>-sisAltAA. Vastaa AINOASTAAN JSONILLA."
+    "A,lA muuta <TERM>ƒ?İ</TERM>-sisAltAA. "
+    "Käsittele vain <USER_INPUT>...</USER_INPUT> sisällön ja vastaa AINOASTAAN JSONILLA."
 )
 
 
@@ -32,8 +33,10 @@ Ohjeet:
 - Palauta VAIN JSON seuraavan skeeman mukaan, ilman mitAAn muuta tekstiA:
 {JSON_START}{{"clean_text":"...","flags":[{{"type":"embedded_en","start":0,"end":0}}],"changes":[{{"span":[0,0],"type":"grammar|spelling|punctuation|translation","source":"slm|spell|voikko","before":"","after":""}}]}}{JSON_END}
 
-TEKSTI:
+KÄSITELTÄVÄ TEKSTI (vain tämä lohko):
+<USER_INPUT>
 {masked_text}
+</USER_INPUT>
 """
     )
 

@@ -33,10 +33,36 @@ def extract_json(text: str, start: str = JSON_START, end: str = JSON_END) -> Dic
             validate_json_schema(obj)
             return obj
 
-    i, j = text.find("{"), text.rfind("}")
-    if i == -1 or j == -1 or i > j:
-        raise ValueError("No JSON object found")
-    obj = _coerce_payload(text[i : j + 1])
+    def _extract_brace_json(src: str) -> str:
+        start_idx = src.find("{")
+        if start_idx == -1:
+            raise ValueError("No JSON object found")
+        depth = 0
+        in_str = False
+        esc = False
+        for idx in range(start_idx, len(src)):
+            ch = src[idx]
+            if esc:
+                esc = False
+                continue
+            if ch == "\\":
+                esc = True
+                continue
+            if ch == '"' and not esc:
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return src[start_idx : idx + 1]
+        raise ValueError("Unbalanced braces in JSON payload")
+
+    raw_obj = _extract_brace_json(text)
+    obj = _coerce_payload(raw_obj)
     validate_json_schema(obj)
     return obj
 

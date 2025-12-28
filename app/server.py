@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool
 from prometheus_fastapi_instrumentator import Instrumentator
 from .schemas import CleanRequest, CleanResponse, ReviewRequest
 from .pipeline import run_pipeline
@@ -26,11 +27,12 @@ def healthz():
 
 @app.post('/clean', response_model=CleanResponse)
 async def clean(req: CleanRequest):
-    result = run_pipeline(
+    result = await run_in_threadpool(
+        run_pipeline,
         req.text,
-        translate_embedded=req.translate_embedded,
-        protected_terms=req.terms,
-        record_id=req.id,
+        req.translate_embedded,
+        req.terms,
+        req.id,
     )
     if result.get("review_status") == "pending":
         enqueue_review(
