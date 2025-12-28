@@ -15,9 +15,9 @@ except Exception:  # pragma: no cover - llama_cpp is optional
 
 # Generation system prompt and JSON sentinels
 SYSTEM = (
-    "Olet kielipuhdistusagentti. A,lA muuta merkitystA. "
-    "A,lA muuta <TERM>ƒ?İ</TERM>-sisAltAA. "
-    "Käsittele vain <USER_INPUT>...</USER_INPUT> sisällön ja vastaa AINOASTAAN JSONILLA."
+    "Olet kielipuhdistusagentti. Älä muuta merkitystä. "
+    "Älä muuta <TERM>...</TERM>-sisältöä. "
+    "Käsittele vain <USER_INPUT>...</USER_INPUT> -lohkon sisältö ja vastaa AINOASTAAN JSONILLA."
 )
 
 
@@ -26,14 +26,14 @@ def _build_user(masked_text: str, translate_embedded: bool) -> str:
     return (
         f"""Kontekstikieli: FI. Sallitut kielet: FI ja EN.
 Ohjeet:
-- Korjaa kielioppi ja vAlimerkit.
-- Jos FI-tekstissA on upotettu EN-segmentti, lisAA flags: {{ "type":"embedded_en","start":i,"end":j }}.
-- translate_embedded = {"true" if translate_embedded else "false"} ƒ+' jos true, kAAnnA EN-osiot suomeksi.
-- A,lA muuta <TERM>ƒ?İ</TERM> -osuuksia.
-- Palauta VAIN JSON seuraavan skeeman mukaan, ilman mitAAn muuta tekstiA:
+- Korjaa kielioppi ja välimerkit.
+- Jos FI-tekstissä on upotettu EN-segmentti, lisää flags: {{ "type":"embedded_en","start":i,"end":j }}.
+- translate_embedded = {"true" if translate_embedded else "false"} → jos true, käännä EN-osiot suomeksi.
+- Älä muuta <TERM>...</TERM> -osuuksia.
+- Palauta VAIN JSON seuraavan skeeman mukaan, ilman mitään muuta tekstiä:
 {JSON_START}{{"clean_text":"...","flags":[{{"type":"embedded_en","start":0,"end":0}}],"changes":[{{"span":[0,0],"type":"grammar|spelling|punctuation|translation","source":"slm|spell|voikko","before":"","after":""}}]}}{JSON_END}
 
-KÄSITELTÄVÄ TEKSTI (vain tämä lohko):
+KÄSITELTÄVÄ TEKSTI (käsittele vain tämä lohko):
 <USER_INPUT>
 {masked_text}
 </USER_INPUT>

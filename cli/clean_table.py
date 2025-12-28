@@ -29,8 +29,8 @@ def main() -> None:
     ap.add_argument(
         "--workers",
         type=int,
-        default=4,
-        help="Number of worker threads (default 4)",
+        default=1,
+        help="Number of worker threads (default 1 to avoid CPU thrash with LLM threads)",
     )
     args = ap.parse_args()
 
