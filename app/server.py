@@ -5,6 +5,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from .schemas import CleanRequest, CleanResponse, ReviewRequest
 from .pipeline import run_pipeline
 from .review_queue import update as update_review, enqueue as enqueue_review, get_pending_reviews
+from .dashboard import router as dashboard_router
 
 app = FastAPI()
 
@@ -16,6 +17,7 @@ app.add_middleware(
 )
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+app.include_router(dashboard_router)
 
 MODEL_READY = True
 

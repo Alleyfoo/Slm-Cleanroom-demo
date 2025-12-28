@@ -15,6 +15,7 @@ from .guardrails import (
 )
 from .entity_lock import extract_entities, enforce_entity_lock
 from .logging_utils import get_logger
+from .learner import Learner
 
 from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
 
@@ -329,8 +330,19 @@ def run_pipeline(
         'risk_score': float(risk_score),
         'review_status': review_status,
     }
+
+    learner = Learner()
+    harmonized = learner.harmonize(final['clean_text'])
+    if harmonized != final['clean_text']:
+        final['clean_text'] = harmonized
+        final['flags'].append({'type': 'harmonized', 'source': 'learner'})
+        # Recompute risk score and escalate review if changed
+        risk_score = _similarity(masked, harmonized)
+        final['risk_score'] = float(risk_score)
+        if final['review_status'] == "auto_approved":
+            final['review_status'] = "pending"
     out = normalize_flags_and_changes(final, masked)
-    log.info("pipeline_end", event="pipeline_end", record_id=record_id or cid, risk_score=risk_score, review_status=review_status)
+    log.info("pipeline_end", event="pipeline_end", record_id=record_id or cid, risk_score=out.get('risk_score'), review_status=out.get('review_status'))
     return out
 
 def run_pipeline_like_this():

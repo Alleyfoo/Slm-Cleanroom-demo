@@ -78,3 +78,33 @@ def get_pending_reviews() -> List[Dict]:
     rows = c.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_review_history(limit: int = 1000) -> List[Dict]:
+    """Return approved/rejected reviews that include a correction, newest first."""
+    init_db()
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT * FROM review_queue
+        WHERE status IN ('approved','rejected') AND correction IS NOT NULL
+        ORDER BY rowid DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_queue_stats() -> Dict[str, int]:
+    """Return counts per status in the review queue."""
+    init_db()
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT status, COUNT(*) as count FROM review_queue GROUP BY status")
+    rows = c.fetchall()
+    conn.close()
+    return {r["status"]: r["count"] for r in rows if r["status"]}

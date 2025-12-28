@@ -109,9 +109,36 @@ def upload_tab():
         st.markdown("---")
 
 
+def analytics_tab():
+    st.header("Analytics & Learning")
+    try:
+        summary = requests.get(f"{API_URL}/stats/summary", timeout=10).json()
+    except Exception as exc:
+        st.error(f"Failed to load stats: {exc}")
+        summary = {}
+    if summary:
+        queue_stats = summary.get("queue_stats", {})
+        st.subheader("Queue status")
+        st.bar_chart(pd.DataFrame.from_dict(queue_stats, orient="index", columns=["count"]))
+
+    try:
+        rules = requests.get(f"{API_URL}/stats/rules", timeout=10).json()
+    except Exception as exc:
+        st.error(f"Failed to load rules: {exc}")
+        rules = []
+    st.subheader("Learned harmonization rules")
+    if rules:
+        df = pd.DataFrame(rules).sort_values(by="confidence", ascending=False)
+        st.table(df)
+    else:
+        st.write("No rules learned yet.")
+
+
 st.title("SLM Cleanroom Review")
-tab1, tab2 = st.tabs(["Ad-hoc", "Review Queue"])
+tab1, tab2, tab3 = st.tabs(["Ad-hoc", "Review Queue", "Analytics"])
 with tab1:
     upload_tab()
 with tab2:
     review_tab()
+with tab3:
+    analytics_tab()
