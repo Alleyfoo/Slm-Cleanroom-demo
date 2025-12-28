@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any, Dict
 
+from .guardrails import JSON_END, JSON_START, extract_json
+
 try:  # optional dependency
     from llama_cpp import Llama  # type: ignore
 except Exception:  # pragma: no cover - llama_cpp is optional
@@ -13,12 +15,9 @@ except Exception:  # pragma: no cover - llama_cpp is optional
 
 # Generation system prompt and JSON sentinels
 SYSTEM = (
-    "Olet kielipuhdistusagentti. Älä muuta merkitystä. "
-    "Älä muuta <TERM>…</TERM>-sisältöä. Vastaa AINOASTAAN JSONILLA."
+    "Olet kielipuhdistusagentti. A,lA muuta merkitystA. "
+    "A,lA muuta <TERM>ƒ?İ</TERM>-sisAltAA. Vastaa AINOASTAAN JSONILLA."
 )
-
-JSON_START = "<JSON>"
-JSON_END = "</JSON>"
 
 
 def _build_user(masked_text: str, translate_embedded: bool) -> str:
@@ -26,38 +25,17 @@ def _build_user(masked_text: str, translate_embedded: bool) -> str:
     return (
         f"""Kontekstikieli: FI. Sallitut kielet: FI ja EN.
 Ohjeet:
-- Korjaa kielioppi ja välimerkit.
-- Jos FI-tekstissä on upotettu EN-segmentti, lisää flags: {{ "type":"embedded_en","start":i,"end":j }}.
-- translate_embedded = {"true" if translate_embedded else "false"} → jos true, käännä EN-osiot suomeksi.
-- Älä muuta <TERM>…</TERM> -osuuksia.
-- Palauta VAIN JSON seuraavan skeeman mukaan, ilman mitään muuta tekstiä:
+- Korjaa kielioppi ja vAlimerkit.
+- Jos FI-tekstissA on upotettu EN-segmentti, lisAA flags: {{ "type":"embedded_en","start":i,"end":j }}.
+- translate_embedded = {"true" if translate_embedded else "false"} ƒ+' jos true, kAAnnA EN-osiot suomeksi.
+- A,lA muuta <TERM>ƒ?İ</TERM> -osuuksia.
+- Palauta VAIN JSON seuraavan skeeman mukaan, ilman mitAAn muuta tekstiA:
 {JSON_START}{{"clean_text":"...","flags":[{{"type":"embedded_en","start":0,"end":0}}],"changes":[{{"span":[0,0],"type":"grammar|spelling|punctuation|translation","source":"slm|spell|voikko","before":"","after":""}}]}}{JSON_END}
 
 TEKSTI:
 {masked_text}
 """
     )
-
-
-def _extract_json_block(txt: str) -> Dict:
-    """Extract JSON object from ``txt`` between ``JSON_START`` and ``JSON_END``."""
-    i = txt.find(JSON_START)
-    j = txt.rfind(JSON_END)
-    if i == -1 or j == -1 or i >= j:
-        raise ValueError("sentinel JSON block not found")
-    raw = txt[i + len(JSON_START) : j].strip()
-    obj = json.loads(raw)
-    if not isinstance(obj, dict):
-        raise ValueError("top-level must be object")
-    obj.setdefault("clean_text", "")
-    obj.setdefault("flags", [])
-    obj.setdefault("changes", [])
-    if not isinstance(obj["flags"], list):
-        obj["flags"] = []
-    if not isinstance(obj["changes"], list):
-        obj["changes"] = []
-    obj["clean_text"] = str(obj.get("clean_text", ""))
-    return obj
 
 
 def slm_cleanup(masked_text: str, translate_embedded: bool, **kwargs: Any) -> Dict:
@@ -101,7 +79,7 @@ def slm_cleanup(masked_text: str, translate_embedded: bool, **kwargs: Any) -> Di
                     + json.dumps({"clean_text": t, "flags": [], "changes": []}, ensure_ascii=False)
                     + JSON_END
                 )
-        return _extract_json_block(raw)
+        return extract_json(raw)
 
     try:
         return _call(masked_text)
@@ -139,4 +117,3 @@ def slm_cleanup(masked_text: str, translate_embedded: bool, **kwargs: Any) -> Di
             offset += len(ct)
 
         return {"clean_text": "".join(clean_parts), "flags": flags, "changes": changes}
-

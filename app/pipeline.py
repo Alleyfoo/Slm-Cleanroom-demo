@@ -12,6 +12,8 @@ from .guardrails import (
     post_validate,
     extract_json,
 )
+from .entity_lock import extract_entities, enforce_entity_lock
+from .logging_utils import get_logger
 
 from .config import MODEL_PATH, N_THREADS, CTX, TEMP, MAX_TOKENS
 
@@ -50,6 +52,11 @@ try:
     _VOIKKO = libvoikko.Voikko("fi")
 except Exception:
     _VOIKKO = None
+
+try:
+    from rapidfuzz import fuzz
+except Exception:
+    fuzz = None
 
 def en_misspellings(text: str):
     if SP_EN is None:
@@ -182,7 +189,24 @@ def normalize_flags_and_changes(result: Dict, masked: str) -> Dict:
 
     return result
 
-def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: Optional[List[str]] = None) -> Dict:
+def _similarity(a: str, b: str) -> float:
+    if fuzz:
+        return fuzz.ratio(a, b) / 100.0
+    return 1.0
+
+
+def run_pipeline(
+    text: str,
+    translate_embedded: bool = False,
+    protected_terms: Optional[List[str]] = None,
+    record_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+) -> Dict:
+    log, cid = get_logger(correlation_id or record_id)
+    log = log.bind(record_id=record_id or cid)
+    log.info("pipeline_start", event="pipeline_start", input_length=len(text))
+
+    locks = extract_entities(text)
     masked = mask_terms(text, protected_terms or [])
 
     spans = lang_spans(masked)
@@ -230,8 +254,19 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
         result = slm_cleanup(masked, translate_embedded)
     validate_json_schema(result)
 
-    forbid_changes_in_terms(masked, result['clean_text'])
+    try:
+        forbid_changes_in_terms(masked, result['clean_text'])
+    except ValueError:
+        # LLM touched locked content; revert and flag below
+        result['clean_text'] = masked
+
+    enforced_clean, entity_flags = enforce_entity_lock(masked, result['clean_text'], locks)
+    if enforced_clean != result['clean_text']:
+        log.warning("entity_lock_enforced", event="entity_lock_enforced", record_id=record_id or cid)
+    result['clean_text'] = enforced_clean
+
     flags.extend(result.get('flags', []))
+    flags.extend(entity_flags)
     # Normalise flags to dictionaries and ignore any numeric change markers
     # coming from the model itself; numeric diffs are detected separately.
     normalised: List[Dict] = []
@@ -251,11 +286,37 @@ def run_pipeline(text: str, translate_embedded: bool = False, protected_terms: O
     changes = result.get('changes', [])
     changes.extend(spell_changes)
     if result['clean_text'] != masked:
-        diff = list(difflib.unified_diff(masked.splitlines(), result['clean_text'].splitlines(), lineterm=''))
-        changes.append({'source': 'diff', 'type': 'rewrite', 'diff': '\n'.join(diff)})
+        matcher = difflib.SequenceMatcher(a=masked, b=result['clean_text'])
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == 'equal':
+                continue
+            changes.append({
+                'source': 'diff',
+                'type': 'rewrite',
+                'span': [i1, i2],
+                'before': masked[i1:i2],
+                'after': result['clean_text'][j1:j2],
+            })
 
-    final = {'clean_text': result['clean_text'], 'flags': flags, 'changes': changes, 'mixed_languages': mixed_languages}
-    return normalize_flags_and_changes(final, masked)
+    risk_score = _similarity(masked, result['clean_text'])
+    if risk_score < 0.85:
+        flags.append({'type': 'high_risk_rewrite', 'score': round(risk_score, 3)})
+
+    review_status = "auto_approved"
+    if any(f.get('type') in {'high_risk_rewrite', 'numeric_change', 'locked_entity_changed'} for f in flags if isinstance(f, dict)):
+        review_status = "pending"
+
+    final = {
+        'clean_text': result['clean_text'],
+        'flags': flags,
+        'changes': changes,
+        'mixed_languages': mixed_languages,
+        'risk_score': float(risk_score),
+        'review_status': review_status,
+    }
+    out = normalize_flags_and_changes(final, masked)
+    log.info("pipeline_end", event="pipeline_end", record_id=record_id or cid, risk_score=risk_score, review_status=review_status)
+    return out
 
 def run_pipeline_like_this():
     example = "Tämä takki on super warm for winter commutes kaupungilla."

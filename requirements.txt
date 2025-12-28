@@ -5,3 +5,9 @@ click
 pandas
 openpyxl
 huggingface_hub
+pytest
+pytest-mock
+loguru
+rapidfuzz
+prometheus-fastapi-instrumentator
+requests

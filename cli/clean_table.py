@@ -4,6 +4,9 @@ import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from app.io_utils import read_table, write_table, parse_terms, serialize
+from app.checkpointing import Checkpointer
+from app.review_queue import enqueue as enqueue_review
+from app.logging_utils import get_logger
 
 
 def main() -> None:
@@ -50,53 +53,111 @@ def main() -> None:
 
     has_terms = "protected_terms" in df.columns
     has_translate = "translate_embedded" in df.columns
+    has_id = "id" in df.columns
+
+    base_columns = list(df.columns)
+    extra_columns = ["clean_text", "flags", "changes", "mixed_languages", "risk_score", "review_status"]
+    all_columns = base_columns + [c for c in extra_columns if c not in base_columns]
+
+    use_checkpoint = out.suffix.lower() == ".csv" and has_id
+    checkpointer = None
+    if use_checkpoint:
+        checkpointer = Checkpointer(out, out.with_suffix(".errors.csv"), id_field="id", fieldnames=all_columns)
 
     clean_texts: list[str] = []
     flags_col: list[str] = []
     changes_col: list[str] = []
     mixed_col: list[bool] = []
+    risk_scores: list[float] = []
+    review_statuses: list[str] = []
     flag_stats: dict[str, int] = {"embedded_en": 0, "term_change": 0}
 
     def process_row(row: dict) -> dict:
         text = str(row["text"])
         terms = parse_terms(row.get("protected_terms")) if has_terms else []
         translate = bool(row.get("translate_embedded")) if has_translate else False
-        return run_pipeline(text, translate_embedded=translate, protected_terms=terms)
+        row_id = row.get("id")
+        res = run_pipeline(
+            text,
+            translate_embedded=translate,
+            protected_terms=terms,
+            record_id=str(row_id) if row_id is not None else None,
+        )
+        if res.get("review_status") == "pending":
+            enqueue_review(str(row_id or ""), {"text": text, "clean_text": res.get("clean_text"), "flags": res.get("flags"), "changes": res.get("changes")})
+        return res
 
     rows = df.to_dict("records")
     chunk_size = max(1, args.workers * 4)
+    processed_count = 0
+    skipped = 0
+    log, _ = get_logger()
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         for i in range(0, len(rows), chunk_size):
             chunk = rows[i : i + chunk_size]
-            for res in ex.map(process_row, chunk):
-                clean_texts.append(res["clean_text"])
-                flags_col.append(serialize(res["flags"]))
-                changes_col.append(serialize(res["changes"]))
-                mixed_col.append(res["mixed_languages"])
+            to_process = []
+            for row in chunk:
+                if use_checkpoint and checkpointer and checkpointer.is_processed(row.get("id")):
+                    skipped += 1
+                    continue
+                to_process.append(row)
+            results = ex.map(process_row, to_process)
+            for row, res in zip(to_process, results):
+                out_row = {**row}
+                out_row["clean_text"] = res["clean_text"]
+                out_row["flags"] = serialize(res["flags"])
+                out_row["changes"] = serialize(res["changes"])
+                out_row["mixed_languages"] = res["mixed_languages"]
+                out_row["risk_score"] = res.get("risk_score", 1.0)
+                out_row["review_status"] = res.get("review_status", "auto_approved")
+
+                if use_checkpoint and checkpointer:
+                    try:
+                        checkpointer.append_row({k: out_row.get(k) for k in all_columns})
+                    except Exception as exc:
+                        checkpointer.append_error(row.get("id"), str(exc), row.get("text", ""))
+                else:
+                    clean_texts.append(out_row["clean_text"])
+                    flags_col.append(serialize(out_row["flags"]))
+                    changes_col.append(serialize(out_row["changes"]))
+                    mixed_col.append(out_row["mixed_languages"])
+                    risk_scores.append(out_row["risk_score"])
+                    review_statuses.append(out_row["review_status"])
+
                 for f in res["flags"]:
                     t = f.get("type") if isinstance(f, dict) else f
                     if t:
                         flag_stats[t] = flag_stats.get(t, 0) + 1
+                processed_count += 1
             if (i + len(chunk)) % 500 == 0:
-                print(f"Processed {i + len(chunk)}/{len(df)} rows")
+                log.info("batch_progress", event="batch_progress", processed=processed_count, skipped=skipped)
 
-    df["clean_text"] = clean_texts
-    df["flags"] = flags_col
-    df["changes"] = changes_col
-    df["mixed_languages"] = mixed_col
+    if not use_checkpoint:
+        df["clean_text"] = clean_texts
+        df["flags"] = flags_col
+        df["changes"] = changes_col
+        df["mixed_languages"] = mixed_col
+        df["risk_score"] = risk_scores
+        df["review_status"] = review_statuses
+        write_table(df, str(out))
 
-    write_table(df, str(out))
-    total = len(df)
+    total = processed_count
     flag_count = sum(flag_stats.values())
     elapsed = time.time() - t0
     elapsed_ms = int(elapsed * 1000)
     throughput = total / elapsed if elapsed > 0 else 0
     summary = ", ".join(f"{k}={v}" for k, v in sorted(flag_stats.items()))
-    print(
-        f"Processed {total} rows, flags={flag_count}, time={elapsed_ms} ms "
-        f"({throughput:.1f} rows/sec) → {out}"
+    log.info(
+        "batch_complete",
+        event="batch_complete",
+        processed=total,
+        skipped=skipped,
+        flags=flag_count,
+        elapsed_ms=elapsed_ms,
+        throughput_rps=throughput,
+        output=str(out),
+        summary=summary,
     )
-    print(f"Summary: {summary}")
 
 
 if __name__ == "__main__":

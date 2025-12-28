@@ -3,18 +3,41 @@ import re
 from typing import Dict, List
 
 SCHEMA_KEYS = {"clean_text", "flags", "changes"}
+JSON_START = "<JSON>"
+JSON_END = "</JSON>"
 
 
-def extract_json(text: str) -> Dict:
+def _coerce_payload(raw: str) -> Dict:
+    """Load JSON and enforce minimal schema defaults."""
+    obj = json.loads(raw)
+    if not isinstance(obj, dict):
+        raise ValueError("JSON schema mismatch")
+    obj.setdefault("clean_text", "")
+    obj.setdefault("flags", [])
+    obj.setdefault("changes", [])
+    for key in ("flags", "changes"):
+        if not isinstance(obj.get(key, []), list):
+            raise ValueError(f"{key} must be a list")
+    obj["clean_text"] = str(obj.get("clean_text", ""))
+    return obj
+
+
+def extract_json(text: str, start: str = JSON_START, end: str = JSON_END) -> Dict:
+    """Extract a JSON object, preferring sentinel markers when present."""
+    if start in text and end in text:
+        i = text.find(start)
+        j = text.rfind(end)
+        if i != -1 and j != -1 and i < j:
+            raw = text[i + len(start) : j].strip()
+            obj = _coerce_payload(raw)
+            validate_json_schema(obj)
+            return obj
+
     i, j = text.find("{"), text.rfind("}")
     if i == -1 or j == -1 or i > j:
         raise ValueError("No JSON object found")
-    obj = json.loads(text[i : j + 1])
-    if not isinstance(obj, dict) or not SCHEMA_KEYS.issubset(obj.keys()):
-        raise ValueError("JSON schema mismatch")
-    for k in ("flags", "changes"):
-        if not isinstance(obj.get(k, []), list):
-            raise ValueError(f"{k} must be a list")
+    obj = _coerce_payload(text[i : j + 1])
+    validate_json_schema(obj)
     return obj
 
 
