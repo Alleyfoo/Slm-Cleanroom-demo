@@ -35,19 +35,39 @@ def merge_protected_terms(terms: List[str], locks: List[Dict]) -> List[str]:
 
 
 def enforce_entity_lock(original: str, clean_text: str, locks: List[Dict]) -> Tuple[str, List[Dict]]:
-    """Ensure locked entities survive; revert and flag if they don't."""
+    """Ensure locked entities survive; patch surgically or revert and flag."""
     flags: List[Dict] = []
     final_text = clean_text
     for lock in locks:
-        if lock["value"] not in final_text:
-            # Revert to original to avoid data corruption and flag for review.
-            final_text = original
-            flags.append(
-                {
-                    "type": "locked_entity_changed",
-                    "entity_type": lock["type"],
-                    "value": lock["value"],
-                }
-            )
-            break
+        if lock["value"] in final_text:
+            continue
+        # Attempt surgical patch at the original span position.
+        try:
+            start, end = lock.get("span", [0, 0])
+            patched = final_text
+            if start <= len(patched):
+                patched = patched[:start] + lock["value"] + patched[start:]
+                final_text = patched
+                flags.append(
+                    {
+                        "type": "locked_entity_changed",
+                        "entity_type": lock["type"],
+                        "value": lock["value"],
+                        "patched": True,
+                    }
+                )
+                continue
+        except Exception:
+            pass
+        # Fallback: revert to original to avoid data corruption.
+        final_text = original
+        flags.append(
+            {
+                "type": "locked_entity_changed",
+                "entity_type": lock["type"],
+                "value": lock["value"],
+                "patched": False,
+            }
+        )
+        break
     return final_text, flags

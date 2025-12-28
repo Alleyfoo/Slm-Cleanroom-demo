@@ -17,8 +17,24 @@ except Exception:  # pragma: no cover - llama_cpp is optional
 SYSTEM = (
     "Olet kielipuhdistusagentti. Älä muuta merkitystä. "
     "Älä muuta <TERM>...</TERM>-sisältöä. "
-    "Käsittele vain <USER_INPUT>...</USER_INPUT> -lohkon sisältö ja vastaa AINOASTAAN JSONILLA."
+    "Käsittele vain <USER_INPUT>...</USER_INPUT> -lohkon sisältö ja vastaa AINOASTAAN JSONILLA.\n"
+    "Esimerkki 1:\n"
+    "User: \"Tämä on <TERM>ABC-123</TERM>, joka on hyvä.\"\n"
+    "Assistant: {\"clean_text\": \"Tämä on <TERM>ABC-123</TERM>, joka on hyvä.\", \"flags\": [], \"changes\": []}\n\n"
+    "Esimerkki 2:\n"
+    "User: \"Super warm takki\"\n"
+    "Assistant: {\"clean_text\": \"Super warm takki\", \"flags\": [{\"type\": \"embedded_en\"}], \"changes\": []}\n"
 )
+
+GRAMMAR = r"""
+root   ::= object
+object ::= "{" space "\"clean_text\"" space ":" space string "," space "\"flags\"" space ":" space array "," space "\"changes\"" space ":" space array "}"
+string ::= "\"" ( [^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) )* "\""
+array  ::= "[" space ( value ("," space value)* )? "]"
+value  ::= object | string | number | "true" | "false" | "null"
+space  ::= [ \t\n]*
+number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)?
+"""
 
 
 def _build_user(masked_text: str, translate_embedded: bool) -> str:
@@ -74,6 +90,7 @@ def slm_cleanup(masked_text: str, translate_embedded: bool, **kwargs: Any) -> Di
                     ],
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    grammar=GRAMMAR,
                 )
                 raw = out["choices"][0]["message"]["content"]
             except Exception:
