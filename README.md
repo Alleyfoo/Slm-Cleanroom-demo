@@ -5,6 +5,12 @@ Local product description cleaner pipeline.
 > **Design Document:** see [docs/design_document.md](docs/design_document.md).  
 > All new changes must reference the sections they touch in the Design Document.
 
+### CS Chatbot LLM Demo (EN)
+[Alleyfoo/Cs-chatbot-llm-demo](https://github.com/Alleyfoo/Cs-chatbot-llm-demo) — Chat-first queue backed by SQLite (safe for multi-workers), FastAPI ingest with API key auth, and Docker Compose (app + worker + Ollama). Quickstart: clone, set `INGEST_API_KEY`, `docker compose up --build` (or `uvicorn app.server:app --reload`), enqueue via `/chat/enqueue`, and watch workers drain the queue.
+
+### CS Chatbot LLM Demo (FI)
+[Alleyfoo/Cs-chatbot-llm-demo](https://github.com/Alleyfoo/Cs-chatbot-llm-demo) — Chat-painotteinen jono SQLite-taustalla (turvallinen monelle työntekijälle), FastAPI-ingest API-avaimella ja Docker Compose (sovellus + työntekijä + Ollama). Pika-aloitus: kloonaa repo, aseta `INGEST_API_KEY`, `docker compose up --build` (tai `uvicorn app.server:app --reload`), jonota viestejä `/chat/enqueue`-päähän ja seuraa, kun työntekijät käsittelevät jonon.
+
 ## Getting started
 
 ### Quickstart (Codespace/local)
