@@ -108,3 +108,32 @@ def get_queue_stats() -> Dict[str, int]:
     rows = c.fetchall()
     conn.close()
     return {r["status"]: r["count"] for r in rows if r["status"]}
+
+
+def get_length_stats() -> Dict[str, float]:
+    """Return basic length stats for originals vs clean text."""
+    init_db()
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT
+            COUNT(*) as n,
+            AVG(LENGTH(text)) as avg_input,
+            AVG(LENGTH(clean_text)) as avg_clean
+        FROM review_queue
+        WHERE text IS NOT NULL AND clean_text IS NOT NULL
+        """
+    )
+    row = c.fetchone()
+    conn.close()
+    if not row or not row["n"]:
+        return {"count": 0, "avg_input": 0.0, "avg_clean": 0.0, "avg_delta": 0.0}
+    avg_input = row["avg_input"] or 0.0
+    avg_clean = row["avg_clean"] or 0.0
+    return {
+        "count": row["n"],
+        "avg_input": avg_input,
+        "avg_clean": avg_clean,
+        "avg_delta": avg_clean - avg_input,
+    }

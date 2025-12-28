@@ -120,6 +120,14 @@ def analytics_tab():
         queue_stats = summary.get("queue_stats", {})
         st.subheader("Queue status")
         st.bar_chart(pd.DataFrame.from_dict(queue_stats, orient="index", columns=["count"]))
+        length_stats = summary.get("length_stats", {})
+        if length_stats:
+            st.subheader("Length drift")
+            st.metric(
+                "Avg length delta (clean - input)",
+                f"{length_stats.get('avg_delta', 0):.1f}",
+                help="Positive means output is longer; negative shorter.",
+            )
 
     try:
         rules = requests.get(f"{API_URL}/stats/rules", timeout=10).json()
