@@ -65,7 +65,7 @@ def en_misspellings(text: str):
     for m in re.finditer(r"[A-Za-z][A-Za-z\-']+", text):
         w = m.group(0)
         if w.lower() in SP_EN.unknown([w]):
-            cand = list(SP_EN.candidates(w))
+            cand = list(SP_EN.candidates(w) or [])
             out.append({"start": m.start(), "end": m.end(), "word": w, "suggest": cand[:3]})
     return out
 

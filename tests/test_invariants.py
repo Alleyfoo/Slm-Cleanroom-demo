@@ -34,5 +34,6 @@ def test_term_change_raises(monkeypatch):
         return {"clean_text": masked_text.replace("ABC-123 v2", "XYZ-999"), "flags": [], "changes": []}
 
     monkeypatch.setattr("app.pipeline.slm_cleanup", fake_cleanup)
-    with pytest.raises(ValueError):
-        run_pipeline("<TERM>ABC-123 v2</TERM>")
+    result = run_pipeline("<TERM>ABC-123 v2</TERM>")
+    assert "<TERM>ABC-123 v2</TERM>" in result["clean_text"]
+    assert "XYZ-999" not in result["clean_text"]

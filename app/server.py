@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from .schemas import CleanRequest, CleanResponse, ReviewRequest
 from .pipeline import run_pipeline
-from .review_queue import update as update_review, enqueue as enqueue_review
+from .review_queue import update as update_review, enqueue as enqueue_review, get_pending_reviews
 
 app = FastAPI()
 
@@ -45,3 +45,8 @@ async def review(item_id: str, body: ReviewRequest):
     """Human-in-the-loop review endpoint."""
     updated = update_review(item_id, approved=body.approved, correction=body.correction)
     return updated
+
+
+@app.get('/reviews/pending')
+async def pending_reviews():
+    return get_pending_reviews()

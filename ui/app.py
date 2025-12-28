@@ -6,30 +6,14 @@ import streamlit as st
 
 from app.pipeline import run_pipeline
 from app.io_utils import parse_terms
+from app.db import get_pending_reviews
 
 API_URL = "http://localhost:8000"
-REVIEW_PATH = Path("data/review_queue.jsonl")
-
-
-def load_review_queue():
-    if not REVIEW_PATH.exists():
-        return []
-    rows = []
-    with REVIEW_PATH.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return rows
 
 
 def review_tab():
     st.header("Review Queue")
-    items = [r for r in load_review_queue() if r.get("status") == "pending"]
+    items = [r for r in get_pending_reviews() if r.get("status") == "pending"]
     if not items:
         st.info("No pending items.")
         return
@@ -53,16 +37,16 @@ def review_tab():
         with col_ok:
             if st.button(f"Approve {iid}", key=f"approve_{iid}"):
                 requests.post(f"{API_URL}/review/{iid}", json={"approved": True})
-                st.experimental_rerun()
+                st.rerun()
         with col_rej:
             if st.button(f"Reject {iid}", key=f"reject_{iid}"):
                 requests.post(f"{API_URL}/review/{iid}", json={"approved": False})
-                st.experimental_rerun()
+                st.rerun()
         with col_edit:
             correction = st.text_area("Edit & Approve", value=item.get("clean_text", ""), key=f"edit_{iid}")
             if st.button(f"Save {iid}", key=f"save_{iid}"):
                 requests.post(f"{API_URL}/review/{iid}", json={"approved": True, "correction": correction})
-                st.experimental_rerun()
+                st.rerun()
 
 
 def upload_tab():
