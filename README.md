@@ -13,6 +13,23 @@ Local product description cleaner pipeline.
 
 ## Getting started
 
+## Overview
+- Local FI/EN cleaner with guardrails: TERM and numeric invariance, JSON via GBNF, spellcheck, and entity locks.
+- Review queue backed by SQLite; UI is API-only (approve/reject/edit).
+- Batch CLI, FastAPI service, and Docker Compose for API + UI.
+
+## Workflow (ASCII)
+```
+Input text/CSV
+    |
+    v
+Mask protected terms -> SLM cleanup (GBNF JSON) -> Guardrails (terms/numerics)
+    |
+    +--> Flags/changes -> SQLite review queue -> UI/API review endpoints
+    |
+    +--> Clean text + audit trail to API response / CSV output
+```
+
 ### Quickstart (Codespace/local)
 ```bash
 python -m venv .venv && source .venv/bin/activate
