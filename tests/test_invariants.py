@@ -31,6 +31,7 @@ def test_numeric_change_flag(monkeypatch):
 
 def test_term_change_survives(monkeypatch):
     """Ensure that pipeline recovers if model changes a protected term."""
+
     def fake_cleanup(masked_text: str, translate_embedded: bool, **kwargs):
         # Simulate model maliciously changing the term
         return {"clean_text": masked_text.replace("ABC-123 v2", "XYZ-999"), "flags": [], "changes": []}
@@ -42,5 +43,5 @@ def test_term_change_survives(monkeypatch):
     result = run_pipeline("<TERM>ABC-123 v2</TERM>")
 
     # Assert that the bad change was reverted and the original term survives
-    assert "<TERM>ABC-123 v2</TERM>" in result['clean_text']
-    assert "XYZ-999" not in result['clean_text']
+    assert "<TERM>ABC-123 v2</TERM>" in result["clean_text"]
+    assert "XYZ-999" not in result["clean_text"]

@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import requests
 import pandas as pd
@@ -8,7 +9,8 @@ from app.pipeline import run_pipeline
 from app.io_utils import parse_terms
 from app.db import get_pending_reviews
 
-API_URL = "http://localhost:8000"
+# Default to localhost for local dev; allow override for Docker/Cloud
+API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 
 def review_tab():
