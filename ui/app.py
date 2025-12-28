@@ -1,25 +1,41 @@
 import json
 import os
-from pathlib import Path
 import requests
 import pandas as pd
 import streamlit as st
 
-from app.pipeline import run_pipeline
-from app.io_utils import parse_terms
-from app.db import get_pending_reviews
-
-# Default to localhost for local dev; allow override for Docker/Cloud
+# Default to localhost for local dev; override in Docker/Cloud
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 
+def call_clean(text: str, terms=None, translate=False, rid=None):
+    payload = {
+        "text": text,
+        "terms": terms or [],
+        "translate_embedded": translate,
+        "id": rid,
+    }
+    resp = requests.post(f"{API_URL}/clean", json=payload, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def review_tab():
-    st.header("Review Queue")
-    items = [r for r in get_pending_reviews() if r.get("status") == "pending"]
-    if not items:
+    st.header("Review Queue (via API)")
+    try:
+        resp = requests.get(f"{API_URL}/reviews/pending", timeout=10)
+        resp.raise_for_status()
+        items = resp.json()
+    except Exception as exc:
+        st.error(f"Failed to load review queue: {exc}")
+        return
+
+    pending = [i for i in items if i.get("status") == "pending"]
+    if not pending:
         st.info("No pending items.")
         return
-    for item in items:
+
+    for item in pending:
         iid = item.get("id", "")
         st.subheader(f"ID: {iid}")
         col1, col2 = st.columns(2)
@@ -52,35 +68,45 @@ def review_tab():
 
 
 def upload_tab():
-    st.header("Ad-hoc Processing")
+    st.header("Ad-hoc Processing (via API)")
     uploaded = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
 
-    if uploaded is not None:
-        if uploaded.name.endswith(".csv"):
-            df = pd.read_csv(uploaded)
-        else:
-            df = pd.read_excel(uploaded)
+    if uploaded is None:
+        return
 
-        for idx, row in df.iterrows():
-            text = str(row.get("text", ""))
-            terms = parse_terms(row.get("protected_terms"))
-            translate = bool(row.get("translate_embedded", False))
-            res = run_pipeline(text, translate_embedded=translate, protected_terms=terms)
+    if uploaded.name.endswith(".csv"):
+        df = pd.read_csv(uploaded)
+    else:
+        df = pd.read_excel(uploaded)
 
-            st.subheader(f"Row {row.get('id', idx)}")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.text_area("Original", text, height=150, key=f"orig_{idx}")
-            with col2:
-                st.text_area("Clean", res['clean_text'], height=150, key=f"clean_{idx}")
+    for idx, row in df.iterrows():
+        text = str(row.get("text", ""))
+        terms = []
+        if "protected_terms" in row and pd.notna(row["protected_terms"]):
+            if isinstance(row["protected_terms"], str):
+                terms = [t.strip() for t in row["protected_terms"].split(";") if t.strip()]
+        translate = bool(row.get("translate_embedded", False))
+        rid = row.get("id", idx)
+        try:
+            res = call_clean(text, terms=terms, translate=translate, rid=rid)
+        except Exception as exc:
+            st.error(f"Row {rid}: API call failed: {exc}")
+            continue
 
-            st.write("Flags:")
-            st.table(pd.DataFrame(res["flags"])) if res["flags"] else st.write("None")
+        st.subheader(f"Row {rid}")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_area("Original", text, height=150, key=f"orig_{idx}")
+        with col2:
+            st.text_area("Clean", res.get("clean_text", ""), height=150, key=f"clean_{idx}")
 
-            st.write("Changes:")
-            st.table(pd.DataFrame(res["changes"])) if res["changes"] else st.write("None")
+        st.write("Flags:")
+        st.table(pd.DataFrame(res.get("flags", []))) if res.get("flags") else st.write("None")
 
-            st.markdown("---")
+        st.write("Changes:")
+        st.table(pd.DataFrame(res.get("changes", []))) if res.get("changes") else st.write("None")
+
+        st.markdown("---")
 
 
 st.title("SLM Cleanroom Review")
