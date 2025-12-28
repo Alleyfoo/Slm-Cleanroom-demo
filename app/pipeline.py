@@ -2,6 +2,7 @@ from typing import List, Dict, Optional
 import difflib
 import json
 import re
+import os
 
 from .lang_utils import mask_terms, lang_spans
 from .slm_llamacpp import slm_cleanup as _slm_cleanup
@@ -45,13 +46,25 @@ try:
 except Exception:
     SP_EN = None
 
-# Optional Voikko (FI)
+# Optional Voikko (FI) - opt-in via VOIKKO_ENABLE=1
 _VOIKKO = None
-try:
-    import libvoikko
-    _VOIKKO = libvoikko.Voikko("fi")
-except Exception:
-    _VOIKKO = None
+_VOIKKO_READY = False
+
+
+def _get_voikko():
+    """Lazily load Voikko only when explicitly enabled."""
+    global _VOIKKO, _VOIKKO_READY
+    if _VOIKKO_READY:
+        return _VOIKKO
+    _VOIKKO_READY = True
+    if os.environ.get("VOIKKO_ENABLE", "").lower() not in {"1", "true", "yes"}:
+        return None
+    try:
+        import libvoikko  # type: ignore
+        _VOIKKO = libvoikko.Voikko("fi")
+    except Exception:
+        _VOIKKO = None
+    return _VOIKKO
 
 try:
     from rapidfuzz import fuzz
@@ -70,13 +83,15 @@ def en_misspellings(text: str):
     return out
 
 def fi_misspellings_voikko(text: str):
-    if _VOIKKO is None:
+    v = _get_voikko()
+    if v is None:
         return []
     out = []
-    for m in re.finditer(r"[A-Za-zÅÄÖåäö][A-Za-zÅÄÖåäö\-']+", text):
+    pattern = r"[A-Za-z][A-Za-z\-\']+"
+    for m in re.finditer(pattern, text):
         w = m.group(0)
-        if not _VOIKKO.spell(w):
-            sugg = _VOIKKO.suggest(w) or []
+        if not v.spell(w):
+            sugg = v.suggest(w) or []
             out.append({"start": m.start(), "end": m.end(), "word": w, "suggest": sugg[:3]})
     return out
 
